@@ -1,0 +1,8 @@
+# Local overrides (copy compose/dev/.env.example to compose/dev/.env)
+.env
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
