@@ -121,5 +121,20 @@ services:
       retries: 5
       start_period: 20s
 
+  indexer:
+    image: ${IMAGE_REGISTRY}/wortlaut-indexer:${INDEXER_TAG:?set in versions.env}
+    profiles: [jobs]
+    restart: "no"
+    mem_limit: 512m
+    depends_on:
+      elasticsearch-setup:
+        condition: service_completed_successfully
+    environment:
+      ELASTICSEARCH_USERNAME: ${INDEXER_ES_USERNAME}
+      ELASTICSEARCH_PASSWORD: ${INDEXER_ES_PASSWORD}
+    volumes:
+      - indexer-data:/data
+
 volumes:
   es-data:
+  indexer-data:

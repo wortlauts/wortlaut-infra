@@ -34,6 +34,19 @@ sops compose/prod/secrets/prod.enc.env
 
 Roll out a change: commit the new version or secret, then run `compose/prod/deploy.sh` on the host.
 
+## Loading the speeches
+
+The `indexer` service is a job, not a long-running service. It logs in with the indexer user and keeps the downloaded protocols in the `indexer-data` volume:
+
+```bash
+docker compose run --rm indexer download --legislative-period 21 --target /data
+docker compose run --rm indexer import --source /data --elasticsearch http://elasticsearch:9200
+```
+
+Run both for each legislative period. The imports are idempotent, so they can be repeated. When the speeches are in Elasticsearch the downloaded files are not needed any more: `docker volume rm wortlaut_indexer-data` removes them.
+
+(Run these with the same `--env-file` options as `deploy.sh` uses, or through a shell that has the decrypted secrets in its environment.)
+
 ## Ports on the host
 
 All bound to `127.0.0.1`, so they are only reachable from the host itself.
