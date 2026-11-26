@@ -12,10 +12,10 @@ Requirements: Docker with Compose v2, about 2 GB of free memory.
 docker compose -f compose/dev/compose.yaml up -d --wait
 ```
 
-| Service | URL |
-| --- | --- |
+| Service       | URL                   |
+| ------------- | --------------------- |
 | Elasticsearch | http://localhost:9200 |
-| Kibana | http://localhost:5601 |
+| Kibana        | http://localhost:5601 |
 
 Check that it is healthy:
 
@@ -43,11 +43,15 @@ Versions and ports can be overridden with a `.env` file next to `compose.yaml`; 
 - Elasticsearch and Kibana must run the same version. Bump `ELASTIC_VERSION` in one place.
 - The German analyzer used for the speech text is built into Elasticsearch, so no plugins are needed.
 
+## Production stack
+
+`compose/prod` runs the whole product on a single host: Elasticsearch with security, Kibana, the API and the frontend. Secrets are kept encrypted in this repository with [SOPS](https://github.com/getsops/sops) and [age](https://github.com/FiloSottile/age). See [compose/prod/README.md](compose/prod/README.md).
+
 ## Layout
 
 ```text
 compose/
   dev/        local stack (Elasticsearch, Kibana)
+  prod/       production stack, versions and encrypted secrets
+host/         one-time preparation of a Debian host for rootless Docker
 ```
-
-Production deployment (Compose with reverse proxy and HTTPS) and later Kubernetes setups will get their own folders.

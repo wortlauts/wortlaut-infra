@@ -1,0 +1,125 @@
+name: wortlaut
+
+x-restart: &restart
+  restart: unless-stopped
+
+services:
+  elasticsearch:
+    <<: *restart
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION:?set in versions.env}
+    mem_limit: 1200m
+    environment:
+      discovery.type: single-node
+      cluster.name: wortlaut
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false"
+      xpack.ml.enabled: "false"
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:?missing secret}
+      ES_JAVA_OPTS: ${ES_JAVA_OPTS:--Xms512m -Xmx512m}
+    ports:
+      - "127.0.0.1:${ES_PORT:-9200}:9200"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'curl -fs -u "elastic:$$ELASTIC_PASSWORD" ''http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s'' >/dev/null || exit 1',
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+  elasticsearch-setup:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION}
+    restart: "no"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    entrypoint: ["bash", "/setup/setup-security.sh"]
+    environment:
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD}
+      KIBANA_SYSTEM_PASSWORD: ${KIBANA_SYSTEM_PASSWORD:?missing secret}
+      API_ES_USERNAME: ${API_ES_USERNAME:?missing secret}
+      API_ES_PASSWORD: ${API_ES_PASSWORD:?missing secret}
+      INDEXER_ES_USERNAME: ${INDEXER_ES_USERNAME:?missing secret}
+      INDEXER_ES_PASSWORD: ${INDEXER_ES_PASSWORD:?missing secret}
+    volumes:
+      - ./elasticsearch/setup-security.sh:/setup/setup-security.sh:ro
+
+  kibana:
+    <<: *restart
+    image: docker.elastic.co/kibana/kibana:${ELASTIC_VERSION}
+    mem_limit: 1100m
+    depends_on:
+      elasticsearch-setup:
+        condition: service_completed_successfully
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      ELASTICSEARCH_USERNAME: kibana_system
+      ELASTICSEARCH_PASSWORD: ${KIBANA_SYSTEM_PASSWORD}
+      XPACK_SECURITY_ENCRYPTIONKEY: ${KIBANA_ENCRYPTION_KEY:?missing secret}
+      XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY: ${KIBANA_ENCRYPTION_KEY}
+      XPACK_REPORTING_ENCRYPTIONKEY: ${KIBANA_ENCRYPTION_KEY}
+      NODE_OPTIONS: --max-old-space-size=768
+    ports:
+      - "127.0.0.1:${KIBANA_PORT:-5601}:5601"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fs http://localhost:5601/api/status >/dev/null || exit 1",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+      start_period: 90s
+
+  api:
+    <<: *restart
+    image: ${IMAGE_REGISTRY:?set in versions.env}/wortlaut-api:${API_TAG:?set in versions.env}
+    mem_limit: 256m
+    depends_on:
+      elasticsearch-setup:
+        condition: service_completed_successfully
+    environment:
+      Elasticsearch__Url: http://elasticsearch:9200
+      Elasticsearch__Username: ${API_ES_USERNAME}
+      Elasticsearch__Password: ${API_ES_PASSWORD}
+    ports:
+      - "127.0.0.1:${API_PORT:-5080}:8080"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bash",
+          "-c",
+          "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    <<: *restart
+    image: ${IMAGE_REGISTRY}/wortlaut-frontend:${FRONTEND_TAG:?set in versions.env}
+    mem_limit: 256m
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_URL: http://api:8080
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  es-data:

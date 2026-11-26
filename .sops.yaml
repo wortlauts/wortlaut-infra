@@ -1,0 +1,5 @@
+creation_rules:
+  - path_regex: compose.prod.secrets..*\.enc\.env$
+    age: >-
+      age19purzffhzam5zj5elwzts6jk5zfywglvv8e72h6glpj0ca27eers90twsp,
+      age1sshsygzl49pcskv97pj4pz3f7wprgj7xkllwdkdj590kcy9303fqm84t22
