@@ -3,11 +3,13 @@ set -euo pipefail
 
 readonly SOPS_IMAGE="ghcr.io/getsops/sops:v3.13.3-alpine"
 readonly AGE_KEY_FILE="${AGE_KEY_FILE:-${HOME}/.config/sops/age/keys.txt}"
+readonly WAIT_TIMEOUT_SECONDS=420
+readonly DEPLOYED_REVISION_FILE="${XDG_STATE_HOME:-${HOME}/.local/state}/wortlaut/deployed-revision"
 
 stack_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_dir="$(git -C "$stack_dir" rev-parse --show-toplevel)"
 decrypted_env="$(mktemp "${XDG_RUNTIME_DIR:-/dev/shm}/wortlaut-env.XXXXXX")"
-trap 'rm -f "$decrypted_env"' EXIT
+deploying=no
 
 decrypt_secrets() {
   docker run --rm \
@@ -22,9 +24,41 @@ compose() {
     --env-file "$stack_dir/versions.env" --env-file "$decrypted_env" "$@"
 }
 
+service_states() {
+  compose ps --all --format '{{.Service}}={{.State}}{{if .Health}}/{{.Health}}{{end}}' 2>/dev/null | tr '\n' ' ' || true
+}
+
+report_result() {
+  local status="$1" result=success message="deployed"
+  if [[ "$status" -ne 0 ]]; then
+    result=failure
+    message="failed with exit status $status"
+  fi
+  "$stack_dir/report-status.sh" "$revision" "$result" "$message" "$(service_states)"
+}
+
+finish() {
+  local status=$?
+  if [[ "$deploying" == yes ]]; then
+    report_result "$status"
+  fi
+  rm -f "$decrypted_env"
+}
+trap finish EXIT
+
 git -C "$repository_dir" pull --ff-only
+revision="$(git -C "$repository_dir" rev-parse HEAD)"
+if [[ "${1:-}" != "--force" && "$(cat "$DEPLOYED_REVISION_FILE" 2>/dev/null || true)" == "$revision" ]]; then
+  echo "Revision $revision is already deployed."
+  exit 0
+fi
+
+deploying=yes
 decrypt_secrets > "$decrypted_env"
 compose pull
-compose up --detach --remove-orphans
+compose up --detach --remove-orphans --wait --wait-timeout "$WAIT_TIMEOUT_SECONDS"
 docker image prune --force >/dev/null
 compose ps
+
+mkdir -p "$(dirname "$DEPLOYED_REVISION_FILE")"
+echo "$revision" > "$DEPLOYED_REVISION_FILE"
