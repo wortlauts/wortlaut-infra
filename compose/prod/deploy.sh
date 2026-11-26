@@ -40,7 +40,7 @@ report_result() {
 finish() {
   local status=$?
   if [[ "$deploying" == yes ]]; then
-    report_result "$status"
+    report_result "$status" || echo "The deployment result could not be reported." >&2
   fi
   rm -f "$decrypted_env"
 }
