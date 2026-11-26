@@ -24,6 +24,16 @@ Elasticsearch speaks plain HTTP inside the Compose network, which is not reachab
 2. Create the encrypted file from the example, for instance by writing the values to a temporary file and running `sops encrypt --input-type dotenv --output-type dotenv <file> > compose/prod/secrets/prod.enc.env`. Use generated values (`openssl rand -hex 24`), letters and digits only.
 3. On the host, put the private age key at `~/.config/sops/age/keys.txt` (mode 600), clone this repository and run `compose/prod/deploy.sh`.
 
+## Deploying a new version
+
+1. In the API, frontend or indexer repository run the workflow **Deploy to PROD** (Actions tab, "Run workflow"). It runs the CI of that repository, builds a `linux/arm64` image, publishes it to ghcr.io as `sha-<short commit>` and then commits the new tag to `compose/prod/versions.env` of this repository. The packages have to be public, because the host pulls them without a login.
+2. The host runs `compose/prod/deploy.sh` for every new commit of `main` in this repository, which also rolls out changed secrets. The script does nothing when the revision is already deployed (`--force` deploys anyway). It waits until every service is healthy.
+3. When the script is done it pushes an info commit with the result (`status.env`) to the branch `prod-status`. The workflow **Report PROD deploy** turns it into a commit status `deploy/prod` on the deployed commit and fails when the deployment failed, so a broken deployment shows up as a red check and in the notification mails. **Deploy to PROD** of the application repository waits for this result and fails with it.
+
+Rolling back means running **Deploy to PROD** again from the older commit, or changing the tag in `versions.env` through a pull request.
+
+`main` of this repository is protected: changes need a pull request with a green CI run. Only the deploy workflows, which push through a deploy key, commit directly.
+
 ## Everyday use
 
 Edit secrets (decrypts into the editor and encrypts again when you save):

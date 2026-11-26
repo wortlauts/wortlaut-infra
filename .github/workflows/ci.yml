@@ -13,3 +13,14 @@ jobs:
 
       - name: Validate the development stack
         run: docker compose -f compose/dev/compose.yaml config --quiet
+
+      - name: Validate the production stack
+        env:
+          ELASTIC_PASSWORD: placeholder
+          KIBANA_SYSTEM_PASSWORD: placeholder
+          KIBANA_ENCRYPTION_KEY: placeholder
+          API_ES_USERNAME: placeholder
+          API_ES_PASSWORD: placeholder
+          INDEXER_ES_USERNAME: placeholder
+          INDEXER_ES_PASSWORD: placeholder
+        run: docker compose --env-file compose/prod/versions.env -f compose/prod/compose.yaml config --quiet
