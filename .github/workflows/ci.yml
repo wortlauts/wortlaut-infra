@@ -24,3 +24,6 @@ jobs:
           INDEXER_ES_USERNAME: placeholder
           INDEXER_ES_PASSWORD: placeholder
         run: docker compose --env-file compose/prod/versions.env -f compose/prod/compose.yaml config --quiet
+
+      - name: Test the host scripts
+        run: bash tests/scripts.test.sh

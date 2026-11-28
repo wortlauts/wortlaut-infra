@@ -16,8 +16,11 @@ call -X PUT "${ELASTICSEARCH_URL}/_security/user/${API_ES_USERNAME}" \
   -d "{\"password\":\"${API_ES_PASSWORD}\",\"roles\":[\"wortlaut_reader\"]}"
 
 call -X PUT "${ELASTICSEARCH_URL}/_security/role/wortlaut_writer" \
-  -d '{"cluster":["monitor","manage_index_templates"],"indices":[{"names":["speeches*"],"privileges":["all"]}]}'
+  -d '{"cluster":["monitor","manage_index_templates"],"indices":[{"names":["speeches*"],"privileges":["all"]},{"names":["wortlaut-logs"],"privileges":["create_doc","auto_configure"]}]}'
 call -X PUT "${ELASTICSEARCH_URL}/_security/user/${INDEXER_ES_USERNAME}" \
   -d "{\"password\":\"${INDEXER_ES_PASSWORD}\",\"roles\":[\"wortlaut_writer\"]}"
 
-echo "Elasticsearch users and roles are in place."
+call -X PUT "${ELASTICSEARCH_URL}/_index_template/wortlaut-logs" \
+  --data-binary @/setup/logs-template.json
+
+echo "Elasticsearch users, roles and the log template are in place."

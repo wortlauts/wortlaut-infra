@@ -37,7 +37,7 @@ services:
     depends_on:
       elasticsearch:
         condition: service_healthy
-    entrypoint: ["bash", "/setup/setup-security.sh"]
+    entrypoint: ["bash", "/setup/setup-elasticsearch.sh"]
     environment:
       ELASTIC_PASSWORD: ${ELASTIC_PASSWORD}
       KIBANA_SYSTEM_PASSWORD: ${KIBANA_SYSTEM_PASSWORD:?missing secret}
@@ -46,7 +46,7 @@ services:
       INDEXER_ES_USERNAME: ${INDEXER_ES_USERNAME:?missing secret}
       INDEXER_ES_PASSWORD: ${INDEXER_ES_PASSWORD:?missing secret}
     volumes:
-      - ./elasticsearch/setup-security.sh:/setup/setup-security.sh:ro
+      - ./elasticsearch:/setup:ro
 
   kibana:
     <<: *restart
@@ -75,6 +75,20 @@ services:
       timeout: 10s
       retries: 30
       start_period: 90s
+
+  kibana-setup:
+    image: docker.elastic.co/kibana/kibana:${ELASTIC_VERSION}
+    profiles: [jobs]
+    restart: "no"
+    mem_limit: 128m
+    depends_on:
+      kibana:
+        condition: service_healthy
+    entrypoint: ["bash", "/setup/setup-kibana.sh"]
+    environment:
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD}
+    volumes:
+      - ./kibana:/setup:ro
 
   api:
     <<: *restart
@@ -130,6 +144,7 @@ services:
       elasticsearch-setup:
         condition: service_completed_successfully
     environment:
+      ELASTICSEARCH_URL: http://elasticsearch:9200
       ELASTICSEARCH_USERNAME: ${INDEXER_ES_USERNAME}
       ELASTICSEARCH_PASSWORD: ${INDEXER_ES_PASSWORD}
     volumes:

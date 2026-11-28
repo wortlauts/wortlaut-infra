@@ -1,0 +1,9 @@
+[Unit]
+Description=Import new Bundestag protocols into Wortlaut
+
+[Service]
+Type=oneshot
+ExecStart=@STACK_DIR@/sync.sh
+StandardOutput=append:%h/.local/state/wortlaut/sync.log
+StandardError=append:%h/.local/state/wortlaut/sync.log
+TimeoutStartSec=30min
