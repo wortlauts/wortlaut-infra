@@ -93,14 +93,21 @@ To change a dashboard, edit it in Kibana, then export both dashboards with their
 
 ## Loading a period from scratch
 
-The first load of a period, or a load from local files, uses the `download` and `import` commands. Run them with the same `--env-file` options as `deploy.sh` uses, or through a shell that has the decrypted secrets in its environment. The downloaded files live in the `indexer-data` volume:
+On an empty index `sync` loads a whole period without keeping files, because every session counts as new. Run it with the same `--env-file` options as `deploy.sh` uses, or through a shell that has the decrypted secrets in its environment:
 
 ```bash
-docker compose run --rm indexer download --legislative-period 21 --target /data
-docker compose run --rm indexer import --source /data
+docker compose --profile jobs run --rm --no-deps indexer sync --legislative-period 20
 ```
 
-The imports are idempotent, so they can be repeated. When the speeches are in Elasticsearch the downloaded files are not needed any more: `docker volume rm wortlaut_indexer-data` removes them. On an empty index `sync --legislative-period <n>` does both steps at once without keeping files, because every session counts as new.
+This downloads about 100 MB per period. Do it one period at a time: the Bundestag page has a bot protection that answers many quick requests with a challenge page.
+
+To load protocols from local files instead, mount a directory with the XML files when running the `import` command:
+
+```bash
+docker compose --profile jobs run --rm --no-deps -v "$PWD/protocols:/data:ro" indexer import --source /data
+```
+
+The imports are idempotent, so they can be repeated.
 
 ## Ports on the host
 
