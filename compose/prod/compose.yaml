@@ -147,9 +147,6 @@ services:
       ELASTICSEARCH_URL: http://elasticsearch:9200
       ELASTICSEARCH_USERNAME: ${INDEXER_ES_USERNAME}
       ELASTICSEARCH_PASSWORD: ${INDEXER_ES_PASSWORD}
-    volumes:
-      - indexer-data:/data
 
 volumes:
   es-data:
-  indexer-data:
