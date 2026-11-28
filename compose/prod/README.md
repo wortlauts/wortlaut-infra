@@ -5,10 +5,12 @@ Runs the whole product on one host with Docker Compose.
 | Service               | Purpose                                                             | Memory limit |
 | --------------------- | ------------------------------------------------------------------- | ------------ |
 | `elasticsearch`       | search index, security enabled                                      | 1200 MB      |
-| `elasticsearch-setup` | one-shot job that creates the users and roles below                 |              |
+| `elasticsearch-setup` | one-shot job that creates the users, roles and the log template     |              |
 | `kibana`              | Kibana for Elasticsearch                                            | 1100 MB      |
 | `api`                 | [wortlaut-api](https://github.com/wortlauts/wortlaut-api)           | 256 MB       |
 | `frontend`            | [wortlaut-frontend](https://github.com/wortlauts/wortlaut-frontend) | 256 MB       |
+| `indexer`             | job (profile `jobs`): the daily sync, see below                     | 512 MB       |
+| `kibana-setup`        | job (profile `jobs`): imports the Kibana dashboards                 | 128 MB       |
 
 Elasticsearch speaks plain HTTP inside the Compose network, which is not reachable from outside. The ports published on the host are bound to `127.0.0.1`.
 
@@ -44,18 +46,61 @@ sops compose/prod/secrets/prod.enc.env
 
 Roll out a change: commit the new version or secret, then run `compose/prod/deploy.sh` on the host.
 
-## Loading the speeches
+## Keeping the index current
 
-The `indexer` service is a job, not a long-running service. It logs in with the indexer user and keeps the downloaded protocols in the `indexer-data` volume:
+A daily job imports the protocols that are new or were corrected since the last run. It is the `indexer` service run with the command `sync` (profile `jobs`, memory limit 512 MB, no volume), started by `sync.sh`. The script decrypts the secrets like `deploy.sh`, pulls the pinned indexer image, runs the job and records the result. By default it fetches the new protocols and checks the newest ten again, which is about a dozen requests a day. See the [indexer README](https://github.com/wortlauts/wortlaut-indexer#sync) for what a run does and [ADR 0007](https://github.com/wortlauts/wortlaut/blob/main/docs/adr/0007-scheduled-sync-of-new-protocols.md) for the reasoning.
+
+The schedule is a systemd user timer (`host/systemd/wortlaut-sync.timer`, every day around 06:30 with a random delay of up to ten minutes, caught up after downtime). `deploy.sh` installs and enables the units through `host/install-sync-timer.sh` after every successful deployment, so nothing has to be set up by hand. The script can also be run on its own as the user of the stack.
+
+Everything the job writes on the host stays in the state directory of that user (`$XDG_STATE_HOME/wortlaut`, default `~/.local/state/wortlaut`):
+
+| File | Content |
+| --- | --- |
+| `sync.log` | output of every run, appended |
+| `sync-status.env` | time, result (`success` or `failure`) and summary line of the last run |
+
+The results are also written to the central log in Elasticsearch, see below.
+
+Useful commands, run as the user of the stack:
+
+```bash
+systemctl --user list-timers wortlaut-sync.timer   # when the next run is due
+systemctl --user start wortlaut-sync.service       # run it now
+tail -n 30 ~/.local/state/wortlaut/sync.log
+cat ~/.local/state/wortlaut/sync-status.env
+```
+
+To repair or backfill a period, run the indexer with a date range (needs the decrypted secrets in the environment, like `deploy.sh` provides):
+
+```bash
+docker compose --profile jobs run --rm --no-deps indexer sync --legislative-period 20 --from 2024-01-01
+```
+
+`sync --all` checks every protocol of a period (about 100 MB for period 21). Use it rarely: the Bundestag page has a bot protection that answers many quick requests with a challenge page, and then the sync fails (it never works around the protection).
+
+## Central log and dashboards
+
+Elasticsearch holds one central log, the data stream `wortlaut-logs`. `elasticsearch-setup` creates its template (`elasticsearch/logs-template.json`, one year of retention) on every deployment. The indexer user may only add documents to it. The sync writes one event per protocol (`event.action: sync.protocol`) and one per run (`sync.run`), with the counts of speeches added, updated and removed, failures, and the duration. Every event has `@timestamp`, `service.name`, `log.level`, `event.action`, `event.outcome` and `message`. The sync fields are listed in the template.
+
+The API and the frontend do not write to it yet. They need a log shipper first, which is a separate step. The template is the place to add their fields.
+
+`kibana-setup` imports two dashboards after every deployment (`kibana/dashboards.ndjson`, a failed import is reported but does not fail the deployment):
+
+- **Wortlaut: speeches**: how many speeches the index holds, per legislative period, per year and per faction, and the date of the latest speech.
+- **Wortlaut: sync and log**: runs, failed runs and failed protocol imports, speeches added, updated and removed per day, run duration, the failed imports as a list, and all log events.
+
+To change a dashboard, edit it in Kibana, then export both dashboards with their related objects (Stack Management, Saved objects) and replace `kibana/dashboards.ndjson`. The next deployment overwrites what is in Kibana with this file.
+
+## Loading a period from scratch
+
+The first load of a period, or a load from local files, uses the `download` and `import` commands. Run them with the same `--env-file` options as `deploy.sh` uses, or through a shell that has the decrypted secrets in its environment. The downloaded files live in the `indexer-data` volume:
 
 ```bash
 docker compose run --rm indexer download --legislative-period 21 --target /data
-docker compose run --rm indexer import --source /data --elasticsearch http://elasticsearch:9200
+docker compose run --rm indexer import --source /data
 ```
 
-Run both for each legislative period. The imports are idempotent, so they can be repeated. When the speeches are in Elasticsearch the downloaded files are not needed any more: `docker volume rm wortlaut_indexer-data` removes them.
-
-(Run these with the same `--env-file` options as `deploy.sh` uses, or through a shell that has the decrypted secrets in its environment.)
+The imports are idempotent, so they can be repeated. When the speeches are in Elasticsearch the downloaded files are not needed any more: `docker volume rm wortlaut_indexer-data` removes them. On an empty index `sync --legislative-period <n>` does both steps at once without keeping files, because every session counts as new.
 
 ## Ports on the host
 

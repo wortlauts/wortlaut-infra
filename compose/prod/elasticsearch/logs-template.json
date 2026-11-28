@@ -1,0 +1,35 @@
+{
+  "index_patterns": ["wortlaut-logs"],
+  "data_stream": {},
+  "priority": 500,
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0
+    },
+    "lifecycle": {
+      "data_retention": "365d"
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp": { "type": "date" },
+        "message": { "type": "text" },
+        "service.name": { "type": "keyword" },
+        "log.level": { "type": "keyword" },
+        "event.action": { "type": "keyword" },
+        "event.outcome": { "type": "keyword" },
+        "error.message": { "type": "text" },
+        "sync.run_id": { "type": "keyword" },
+        "sync.legislative_period": { "type": "short" },
+        "sync.session": { "type": "short" },
+        "sync.protocols_checked": { "type": "integer" },
+        "sync.protocols_failed": { "type": "integer" },
+        "sync.speeches_total": { "type": "integer" },
+        "sync.speeches_added": { "type": "integer" },
+        "sync.speeches_updated": { "type": "integer" },
+        "sync.speeches_removed": { "type": "integer" },
+        "sync.duration_ms": { "type": "long" }
+      }
+    }
+  }
+}

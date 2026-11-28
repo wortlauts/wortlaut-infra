@@ -1,28 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly SOPS_IMAGE="ghcr.io/getsops/sops:v3.13.3-alpine"
-readonly AGE_KEY_FILE="${AGE_KEY_FILE:-${HOME}/.config/sops/age/keys.txt}"
+source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+
 readonly WAIT_TIMEOUT_SECONDS=420
-readonly DEPLOYED_REVISION_FILE="${XDG_STATE_HOME:-${HOME}/.local/state}/wortlaut/deployed-revision"
-
-stack_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repository_dir="$(git -C "$stack_dir" rev-parse --show-toplevel)"
-decrypted_env="$(mktemp "${XDG_RUNTIME_DIR:-/dev/shm}/wortlaut-env.XXXXXX")"
+readonly DEPLOYED_REVISION_FILE="$STATE_DIR/deployed-revision"
+readonly SYNC_TIMER_INSTALLER="$repository_dir/host/install-sync-timer.sh"
 deploying=no
-
-decrypt_secrets() {
-  docker run --rm \
-    -v "$AGE_KEY_FILE:/age/keys.txt:ro" \
-    -e SOPS_AGE_KEY_FILE=/age/keys.txt \
-    -v "$repository_dir:/repository:ro" \
-    "$SOPS_IMAGE" decrypt --output-type dotenv "/repository/compose/prod/secrets/prod.enc.env"
-}
-
-compose() {
-  docker compose --project-directory "$stack_dir" \
-    --env-file "$stack_dir/versions.env" --env-file "$decrypted_env" "$@"
-}
 
 service_states() {
   compose ps --all --format '{{.Service}}={{.State}}{{if .Health}}/{{.Health}}{{end}}' 2>/dev/null | tr '\n' ' ' || true
@@ -64,8 +48,12 @@ deploying=yes
 decrypt_secrets > "$decrypted_env"
 compose pull
 compose up --detach --remove-orphans --wait --wait-timeout "$WAIT_TIMEOUT_SECONDS"
+compose run --rm --no-deps --no-TTY elasticsearch-setup
+compose --profile jobs run --rm --no-deps --no-TTY kibana-setup || echo "The Kibana dashboards could not be imported." >&2
 remove_unused_images
 compose ps
 
-mkdir -p "$(dirname "$DEPLOYED_REVISION_FILE")"
+mkdir -p "$STATE_DIR"
 echo "$revision" > "$DEPLOYED_REVISION_FILE"
+
+"$SYNC_TIMER_INSTALLER" || echo "The sync timer could not be installed." >&2
