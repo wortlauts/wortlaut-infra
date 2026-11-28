@@ -28,6 +28,13 @@ service_states() {
   compose ps --all --format '{{.Service}}={{.State}}{{if .Health}}/{{.Health}}{{end}}' 2>/dev/null | tr '\n' ' ' || true
 }
 
+remove_unused_images() {
+  local keep
+  keep="$(compose --profile '*' config --images; echo "$SOPS_IMAGE")"
+  docker image prune --force > /dev/null
+  docker image ls --format '{{.Repository}}:{{.Tag}}'     | grep -vxF "$keep"     | xargs --no-run-if-empty docker image rm > /dev/null 2>&1 || true
+}
+
 report_result() {
   local status="$1" result=success message="deployed"
   if [[ "$status" -ne 0 ]]; then
@@ -57,7 +64,7 @@ deploying=yes
 decrypt_secrets > "$decrypted_env"
 compose pull
 compose up --detach --remove-orphans --wait --wait-timeout "$WAIT_TIMEOUT_SECONDS"
-docker image prune --force >/dev/null
+remove_unused_images
 compose ps
 
 mkdir -p "$(dirname "$DEPLOYED_REVISION_FILE")"
